@@ -1,9 +1,8 @@
-
 import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-# Lista de arquivos das turmas do 7º ano
+# Carregar dados das turmas
 arquivos = [
     "7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv",
     "7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv",
@@ -12,69 +11,109 @@ arquivos = [
     "7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv",
     "7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv"
 ]
-
-# Carrega e junta todos os arquivos
 df = pd.concat([pd.read_csv(f) for f in arquivos], ignore_index=True)
 
-# Selecionar colunas das questões
-colunas_questoes = [col for col in df.columns if "Resposta" in col]
+# Carregar gabarito
+gabarito = pd.read_csv("gabarito_7ano_letras.csv")
+gabarito_dict = {f'P. {row["Questão"]} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito.iterrows()}
+quest_cols = [col for col in df.columns if col in gabarito_dict]
 
-# Função de acerto: considera "Correta" como acerto
-def contar_acertos(df_sub):
-    return [df_sub[col].str.lower().str.strip().eq("correta").sum() for col in colunas_questoes]
+# Função para calcular taxa de acertos
+def calcular_taxa_acerto_por_questao(df_turma):
+    total_alunos = len(df_turma)
+    acertos = []
+    for col in quest_cols:
+        resposta_correta = gabarito_dict[col]
+        respostas_alunos = df_turma[col].fillna('').astype(str).str.upper().str.strip()
+        acertos_coluna = respostas_alunos == resposta_correta
+        acertos.append(acertos_coluna.sum())
+    taxas = [(ac / total_alunos) * 100 if total_alunos > 0 else 0 for ac in acertos]
+    return taxas
 
-# App
+# Criar app Dash
 app = Dash(__name__)
-app.title = "Desempenho por Questão"
+app.title = "Acertos por Questão - 7º Ano"
+server = app.server
 
-# Layout
 app.layout = html.Div(style={'fontFamily': 'Arial', 'padding': '30px'}, children=[
-    html.H1("📚 Desempenho por Questão - Avaliação 7º Ano", style={'textAlign': 'center'}),
+    html.H1("📊 Taxa de Acerto por Questão", style={'textAlign': 'center'}),
 
     html.Div([
-        html.Label("Selecione uma turma:", style={'fontSize': '18px'}),
+        html.Label("Escola:", style={'fontSize': '16px'}),
         dcc.Dropdown(
-            id='turma-dropdown',
-            options=[{'label': turma, 'value': turma} for turma in sorted(df['Nome da turma'].dropna().unique())],
-            value=sorted(df['Nome da turma'].dropna().unique())[0],
-            clearable=False,
-            style={'width': '100%'}
+            id='escola-dropdown',
+            options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].dropna().unique())],
+            placeholder="Selecione a escola",
+            style={'marginBottom': '15px'}
         ),
-    ], style={'width': '50%', 'margin': '0 auto'}),
+
+        html.Label("Ano/Série:", style={'fontSize': '16px'}),
+        dcc.Dropdown(id='serie-dropdown', placeholder="Selecione o ano/série", style={'marginBottom': '15px'}),
+
+        html.Label("Turma:", style={'fontSize': '16px'}),
+        dcc.Dropdown(id='turma-dropdown', placeholder="Selecione a turma"),
+    ], style={'width': '60%', 'margin': 'auto'}),
 
     html.Br(),
-
-    html.Div([
-        dcc.Graph(id='grafico-questoes')
-    ])
+    dcc.Graph(id='grafico-questoes')
 ])
 
-# Callback
+@app.callback(
+    Output('serie-dropdown', 'options'),
+    Input('escola-dropdown', 'value')
+)
+def atualizar_series(escola):
+    if escola:
+        return [{'label': s, 'value': s} for s in sorted(df[df['Escola'] == escola]['Ano/Série'].unique())]
+    return []
+
+@app.callback(
+    Output('turma-dropdown', 'options'),
+    [Input('escola-dropdown', 'value'),
+     Input('serie-dropdown', 'value')]
+)
+def atualizar_turmas(escola, serie):
+    if escola and serie:
+        filtrado = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie)]
+        return [{'label': t, 'value': t} for t in sorted(filtrado['Nome da turma'].unique())]
+    return []
+
 @app.callback(
     Output('grafico-questoes', 'figure'),
     Input('turma-dropdown', 'value')
 )
 def atualizar_grafico(turma):
     df_turma = df[df['Nome da turma'] == turma]
-    acertos = contar_acertos(df_turma)
-    total = df_turma.shape[0]
-    porcentagens = [(a / total) * 100 if total > 0 else 0 for a in acertos]
-    labels = [col.replace("P. ", "Q").replace(" Resposta", "") for col in colunas_questoes]
+    taxas = calcular_taxa_acerto_por_questao(df_turma)
+    quest_labels = [col.replace("P. ", "Q").replace(" Resposta", "") for col in quest_cols]
 
     fig = px.bar(
-        x=labels,
-        y=porcentagens,
+        x=quest_labels,
+        y=taxas,
         labels={'x': 'Questão', 'y': 'Taxa de Acerto (%)'},
         title=f"Taxa de Acertos por Questão - {turma}",
-        template='plotly',
-        text=[f"{p:.1f}%" for p in porcentagens]
+        template='plotly'
     )
-    fig.update_traces(marker_color='#0077b6', textposition='outside')
-    fig.update_layout(yaxis_range=[0, 100], title_font_size=22)
+    fig.update_traces(marker_color='#118ab2', textposition='none')
+    fig.update_layout(yaxis_range=[0, 100], plot_bgcolor='white', paper_bgcolor='white')
 
+    for i, pct in enumerate(taxas):
+        fig.add_annotation(
+            x=quest_labels[i],
+            y=pct + 2,
+            text=f"{pct:.1f}%",
+            showarrow=False,
+            font=dict(color="white", size=13),
+            align="center",
+            bgcolor="black",
+            bordercolor="black",
+            borderpad=2,
+            opacity=1.0,
+            borderwidth=0,
+            xanchor="center",
+            yanchor="bottom"
+        )
     return fig
 
-# Executar app
 if __name__ == '__main__':
     app.run(debug=True)
-
