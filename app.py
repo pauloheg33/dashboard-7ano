@@ -2,18 +2,21 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-# Carregando dados das turmas com metadados
+# Carregar dados com colunas extras
 def carregar_dados(caminho, escola, serie):
     df = pd.read_csv(caminho)
     df["Escola"] = escola
     df["Ano/Série"] = serie
     return df
 
+# Lista de arquivos e metadados
 dfs = [
     carregar_dados("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO"),
     carregar_dados("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BAROS", "6º ANO"),
     carregar_dados("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO"),
-    carregar_dados("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO")
+    carregar_dados("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO"),
+    carregar_dados("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO"),
+    carregar_dados("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO")
 ]
 
 df = pd.concat(dfs, ignore_index=True)
@@ -23,7 +26,6 @@ gabarito = pd.read_csv("gabarito_7ano_letras.csv")
 gabarito_dict = {f'P. {int(row["Questão"])} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito.iterrows()}
 quest_cols = [col for col in df.columns if col in gabarito_dict]
 
-# Cálculo de acertos por questão
 def calcular_taxa_acerto_por_questao(df_turma):
     total = len(df_turma)
     acertos = []
@@ -32,7 +34,6 @@ def calcular_taxa_acerto_por_questao(df_turma):
         acertos.append((respostas == gabarito_dict[col]).sum())
     return [(a / total) * 100 if total else 0 for a in acertos]
 
-# App Dash
 app = Dash(__name__)
 server = app.server
 
@@ -43,7 +44,7 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
         html.Label("Escola:", style={'fontWeight': 'bold'}),
         dcc.Dropdown(
             id='escola-dropdown',
-            options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].unique())],
+            options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].dropna().unique())],
             placeholder="Selecione a escola...",
             style={'marginBottom': '10px'}
         ),
