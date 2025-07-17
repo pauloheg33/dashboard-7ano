@@ -26,7 +26,8 @@ df = pd.concat(dfs, ignore_index=True)
 # Gabarito
 gabarito = pd.read_csv("gabarito_7ano_letras.csv")
 gabarito_dict = {f'P. {int(row["Questão"])} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito.iterrows()}
-quest_cols = [col for col in df.columns if col in gabarito_dict]
+quest_cols = [col for col in df.columns if col in gabarito_dict
+]
 
 def calcular_taxa_acerto_por_questao(df_turma):
     total = len(df_turma)
