@@ -7,4 +7,4 @@ read mensagem
 # Adiciona mudanças, faz o commit e envia para o GitHub
 git add .
 git commit -m "$mensagem"
-git push origin master
+git push origin main
