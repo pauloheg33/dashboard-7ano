@@ -1,33 +1,42 @@
-
+import os
 import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-# Carregar dados com colunas extras
-def carregar_dados(caminho, escola, serie, componente):
+# Caminho base dos arquivos
+BASE_PATH = os.path.dirname(__file__)
+
+# Carregar dados com verificação
+def carregar_dados(nome_arquivo, escola, serie, componente):
+    caminho = os.path.join(BASE_PATH, nome_arquivo)
+    if not os.path.exists(caminho):
+        print(f"❌ Arquivo não encontrado: {nome_arquivo}")
+        return None
     df = pd.read_csv(caminho)
     df["Escola"] = escola
     df["Ano/Série"] = serie
     df["Componente"] = componente
     return df
 
-# Lista de arquivos e metadados
-dfs = [
-    carregar_dados("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
-    carregar_dados("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BAROS", "6º ANO", "Matemática"),
-    carregar_dados("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
-    carregar_dados("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO", "Matemática"),
-    carregar_dados("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
-    carregar_dados("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática")
+# Lista segura de arquivos
+arquivos = [
+    ("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
+    ("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BARROS", "7º ANO", "Matemática"),
+    ("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+    ("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO", "Matemática"),
+    ("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+    ("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática")
 ]
 
+dfs = [carregar_dados(*arq) for arq in arquivos]
+dfs = [df for df in dfs if df is not None]
 df = pd.concat(dfs, ignore_index=True)
 
 # Gabarito
-gabarito = pd.read_csv("gabarito_7ano_letras.csv")
+gabarito_path = os.path.join(BASE_PATH, "gabarito_7ano_letras.csv")
+gabarito = pd.read_csv(gabarito_path)
 gabarito_dict = {f'P. {int(row["Questão"])} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito.iterrows()}
-quest_cols = [col for col in df.columns if col in gabarito_dict
-]
+quest_cols = [col for col in df.columns if col in gabarito_dict]
 
 def calcular_taxa_acerto_por_questao(df_turma):
     total = len(df_turma)
@@ -42,7 +51,6 @@ server = app.server
 
 app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backgroundColor': '#f8f9fa'}, children=[
     html.H2("📊 Desempenho por Questão", style={'textAlign': 'center', 'color': '#2c3e50'}),
-
     html.Div([
         html.Div([
             html.Label("Escola:", style={'fontWeight': 'bold'}),
@@ -53,17 +61,14 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
                 style={'width': '100%'}
             )
         ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
-
         html.Div([
             html.Label("Ano/Série:", style={'fontWeight': 'bold'}),
             dcc.Dropdown(id='serie-dropdown', placeholder="Selecione o ano/série...", style={'width': '100%'})
         ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
-
         html.Div([
             html.Label("Turma:", style={'fontWeight': 'bold'}),
             dcc.Dropdown(id='turma-dropdown', placeholder="Selecione a turma...", style={'width': '100%'})
         ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
-
         html.Div([
             html.Label("Componente:", style={'fontWeight': 'bold'}),
             dcc.Dropdown(
@@ -76,7 +81,6 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
     ], style={'width': '100%', 'margin': 'auto', 'padding': '25px 10px', 'border': '1px solid #ccc',
               'borderRadius': '10px', 'backgroundColor': '#ffffff', 'boxShadow': '0 4px 8px rgba(0,0,0,0.05)',
               'marginBottom': '30px'}),
-
     html.Br(),
     dcc.Graph(id='grafico-questoes')
 ])
@@ -87,7 +91,8 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
 )
 def atualizar_series(escola):
     if escola:
-        return [{'label': s, 'value': s} for s in ['6º ANO', '7º ANO', '8º ANO', '9º ANO'] if s in df[df['Escola'] == escola]['Ano/Série'].unique()]
+        series = df[df['Escola'] == escola]['Ano/Série'].unique()
+        return [{'label': s, 'value': s} for s in sorted(series)]
     return []
 
 @app.callback(
@@ -97,7 +102,7 @@ def atualizar_series(escola):
 def atualizar_turmas(escola, serie):
     if escola and serie:
         dff = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie)]
-        return [{'label': t, 'value': t} for t in sorted(dff['Nome da turma'].unique())]
+        return [{'label': t, 'value': t} for t in sorted(dff['Nome da turma'].dropna().unique())]
     return []
 
 @app.callback(
