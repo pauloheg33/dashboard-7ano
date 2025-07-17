@@ -106,3 +106,4 @@ def atualizar_grafico(turma):
 # Rodar o app
 if __name__ == '__main__':
     app.run(debug=True)
+    

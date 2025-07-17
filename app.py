@@ -1,22 +1,24 @@
+
 import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
 # Carregar dados com colunas extras
-def carregar_dados(caminho, escola, serie):
+def carregar_dados(caminho, escola, serie, componente):
     df = pd.read_csv(caminho)
     df["Escola"] = escola
     df["Ano/Série"] = serie
+    df["Componente"] = componente
     return df
 
 # Lista de arquivos e metadados
 dfs = [
-    carregar_dados("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO"),
-    carregar_dados("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BAROS", "6º ANO"),
-    carregar_dados("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO"),
-    carregar_dados("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO"),
-    carregar_dados("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO"),
-    carregar_dados("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO")
+    carregar_dados("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
+    carregar_dados("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BAROS", "6º ANO", "Matemática"),
+    carregar_dados("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+    carregar_dados("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO", "Matemática"),
+    carregar_dados("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+    carregar_dados("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática")
 ]
 
 df = pd.concat(dfs, ignore_index=True)
@@ -41,29 +43,38 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
     html.H2("📊 Desempenho por Questão", style={'textAlign': 'center', 'color': '#2c3e50'}),
 
     html.Div([
-        html.Label("Escola:", style={'fontWeight': 'bold'}),
-        dcc.Dropdown(
-            id='escola-dropdown',
-            options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].dropna().unique())],
-            placeholder="Selecione a escola...",
-            style={'marginBottom': '10px'}
-        ),
+        html.Div([
+            html.Label("Escola:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(
+                id='escola-dropdown',
+                options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].dropna().unique())],
+                placeholder="Selecione a escola...",
+                style={'width': '100%'}
+            )
+        ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
 
-        html.Label("Ano/Série:", style={'fontWeight': 'bold'}),
-        dcc.Dropdown(id='serie-dropdown', placeholder="Selecione o ano/série...", style={'marginBottom': '10px'}),
+        html.Div([
+            html.Label("Ano/Série:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(id='serie-dropdown', placeholder="Selecione o ano/série...", style={'width': '100%'})
+        ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
 
-        html.Label("Turma:", style={'fontWeight': 'bold'}),
-        dcc.Dropdown(id='turma-dropdown', placeholder="Selecione a turma...")
-    ], style={
-        'width': '80%',
-        'maxWidth': '600px',
-        'margin': 'auto',
-        'padding': '25px',
-        'border': '1px solid #ccc',
-        'borderRadius': '10px',
-        'backgroundColor': '#ffffff',
-        'boxShadow': '0 4px 8px rgba(0,0,0,0.05)'
-    }),
+        html.Div([
+            html.Label("Turma:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(id='turma-dropdown', placeholder="Selecione a turma...", style={'width': '100%'})
+        ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
+
+        html.Div([
+            html.Label("Componente:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(
+                id='componente-dropdown',
+                options=[{'label': c, 'value': c} for c in sorted(df['Componente'].dropna().unique())],
+                placeholder="Selecione o componente...",
+                style={'width': '100%'}
+            )
+        ], style={'width': '24%', 'display': 'inline-block'})
+    ], style={'width': '100%', 'margin': 'auto', 'padding': '25px 10px', 'border': '1px solid #ccc',
+              'borderRadius': '10px', 'backgroundColor': '#ffffff', 'boxShadow': '0 4px 8px rgba(0,0,0,0.05)',
+              'marginBottom': '30px'}),
 
     html.Br(),
     dcc.Graph(id='grafico-questoes')
@@ -90,10 +101,10 @@ def atualizar_turmas(escola, serie):
 
 @app.callback(
     Output('grafico-questoes', 'figure'),
-    Input('turma-dropdown', 'value')
+    [Input('turma-dropdown', 'value'), Input('componente-dropdown', 'value')]
 )
-def atualizar_grafico(turma):
-    dff = df[df['Nome da turma'] == turma]
+def atualizar_grafico(turma, componente):
+    dff = df[(df['Nome da turma'] == turma) & (df['Componente'] == componente)]
     taxas = calcular_taxa_acerto_por_questao(dff)
     quest_labels = [col.replace("P. ", "Q").replace(" Resposta", "") for col in quest_cols]
 
@@ -101,7 +112,7 @@ def atualizar_grafico(turma):
         x=quest_labels,
         y=taxas,
         labels={'x': 'Questão', 'y': 'Taxa de Acerto (%)'},
-        title=f"Taxa de Acertos - {turma}",
+        title=f"Taxa de Acertos - {turma} ({componente})",
         template='plotly_white'
     )
     fig.update_traces(marker_color='#118ab2')
@@ -122,8 +133,31 @@ def atualizar_grafico(turma):
             yanchor="bottom"
         )
 
+    if taxas:
+        media_geral = sum(taxas) / len(taxas)
+        fig.add_shape(
+            type='line',
+            x0=-0.5,
+            x1=len(taxas) - 0.5,
+            y0=media_geral,
+            y1=media_geral,
+            line=dict(color='red', dash='dash', width=2)
+        )
+        fig.add_annotation(
+            x=0,
+            y=media_geral + 15,
+            text=f"Média: {media_geral:.1f}%",
+            showarrow=False,
+            font=dict(color="red", size=14),
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="red",
+            borderwidth=1,
+            xanchor="left",
+            yanchor="bottom"
+        )
+
     fig.update_layout(yaxis_range=[0, 100])
     return fig
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=8051)
