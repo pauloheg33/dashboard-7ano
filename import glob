@@ -1,0 +1,12 @@
+import glob
+import pandas as pd
+
+def carregar_dados():
+    arquivos = glob.glob('results_*/**/*.csv', recursive=True)
+    dfs = []
+    for arquivo in arquivos:
+        df = pd.read_csv(arquivo)
+        # Adapte aqui se precisar identificar série/disciplina pelo caminho do arquivo
+        dfs.append(df)
+    dados = pd.concat(dfs, ignore_index=True)
+    return dados

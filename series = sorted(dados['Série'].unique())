@@ -1,0 +1,2 @@
+series = sorted(dados['Série'].unique())  # Certifique-se de que o campo está correto
+componentes = sorted(dados['Componente'].unique())

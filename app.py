@@ -1,4 +1,5 @@
 import os
+import glob
 import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
@@ -6,45 +7,82 @@ from dash import Dash, dcc, html, Input, Output
 # Caminho base dos arquivos
 BASE_PATH = os.path.dirname(__file__)
 
-# Carregar dados com verificação
-def carregar_dados(nome_arquivo, escola, serie, componente):
-    caminho = os.path.join(BASE_PATH, nome_arquivo)
-    if not os.path.exists(caminho):
-        print(f"❌ Arquivo não encontrado: {nome_arquivo}")
-        return None
-    df = pd.read_csv(caminho)
-    df["Escola"] = escola
-    df["Ano/Série"] = serie
-    df["Componente"] = componente
-    return df
+# Função para carregar todos os arquivos CSV, inclusive das novas pastas results_*
+def carregar_todos_dados():
+    dfs = []
+    # Arquivos antigos (7º ano)
+    arquivos_7ano = [
+        ("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
+        ("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BARROS", "7º ANO", "Matemática"),
+        ("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+        ("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO", "Matemática"),
+        ("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
+        ("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática")
+    ]
+    for nome_arquivo, escola, serie, componente in arquivos_7ano:
+        caminho = os.path.join(BASE_PATH, nome_arquivo)
+        if os.path.exists(caminho):
+            df = pd.read_csv(caminho)
+            df["Escola"] = escola
+            df["Ano/Série"] = serie
+            df["Componente"] = componente
+            dfs.append(df)
+    # Novos arquivos das pastas results_*
+    for arquivo in glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv")):
+        # Inferir escola, série e componente do nome do arquivo ou do caminho
+        nome = os.path.basename(arquivo)
+        partes = nome.replace(".csv", "").split("_")
+        # Exemplo de nome: results_1ano_portugues_EEF_SAO_JOSE.csv
+        # Ajuste conforme o padrão real dos arquivos
+        try:
+            serie = partes[1].replace("ano", "º ANO")
+            componente = "Português" if "portugues" in partes[2].lower() else "Matemática"
+            escola = " ".join(partes[3:]).replace("-", " ").upper()
+        except Exception:
+            serie = "Desconhecido"
+            componente = "Desconhecido"
+            escola = "Desconhecido"
+        df = pd.read_csv(arquivo)
+        df["Escola"] = escola
+        df["Ano/Série"] = serie
+        df["Componente"] = componente
+        dfs.append(df)
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+    return pd.DataFrame()
 
-# Lista segura de arquivos
-arquivos = [
-    ("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
-    ("7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv", "E.E.F ANTONIO DE SOUSA BARROS", "7º ANO", "Matemática"),
-    ("7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
-    ("7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv", "E.E.F FIRMINO JOSÉ", "7º ANO", "Matemática"),
-    ("7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática"),
-    ("7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv", "E.E.F 21 DE DEZEMBRO", "7º ANO", "Matemática")
-]
+df = carregar_todos_dados()
 
-dfs = [carregar_dados(*arq) for arq in arquivos]
-dfs = [df for df in dfs if df is not None]
-df = pd.concat(dfs, ignore_index=True)
+# Gabaritos por série e componente
+gabaritos = {}
+for serie in df['Ano/Série'].unique():
+    for componente in df['Componente'].unique():
+        gabarito_nome = f"gabarito_{serie.lower().replace('º ano','').replace(' ','').replace('/','')}_{componente.lower()}.csv"
+        gabarito_path = os.path.join(BASE_PATH, gabarito_nome)
+        if os.path.exists(gabarito_path):
+            gabarito_df = pd.read_csv(gabarito_path)
+            gabarito_dict = {f'P. {int(row["Questão"])} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito_df.iterrows()}
+            gabaritos[(serie, componente)] = gabarito_dict
 
-# Gabarito
-gabarito_path = os.path.join(BASE_PATH, "gabarito_7ano_letras.csv")
-gabarito = pd.read_csv(gabarito_path)
-gabarito_dict = {f'P. {int(row["Questão"])} Resposta': row["Gabarito"].strip().upper() for _, row in gabarito.iterrows()}
-quest_cols = [col for col in df.columns if col in gabarito_dict]
+def get_quest_cols(serie, componente):
+    gabarito_dict = gabaritos.get((serie, componente))
+    if not gabarito_dict:
+        return []
+    return [col for col in df.columns if col in gabarito_dict]
 
-def calcular_taxa_acerto_por_questao(df_turma):
+def calcular_taxa_acerto_por_questao(df_turma, serie, componente):
+    gabarito_dict = gabaritos.get((serie, componente))
+    quest_cols = get_quest_cols(serie, componente)
+    if not gabarito_dict or not quest_cols:
+        return [], []
     total = len(df_turma)
     acertos = []
     for col in quest_cols:
         respostas = df_turma[col].fillna('').astype(str).str.upper().str.strip()
         acertos.append((respostas == gabarito_dict[col]).sum())
-    return [(a / total) * 100 if total else 0 for a in acertos]
+    taxas = [(a / total) * 100 if total else 0 for a in acertos]
+    quest_labels = [col.replace("P. ", "Q").replace(" Resposta", "") for col in quest_cols]
+    return taxas, quest_labels
 
 app = Dash(__name__)
 server = app.server
@@ -107,13 +145,15 @@ def atualizar_turmas(escola, serie):
 
 @app.callback(
     Output('grafico-questoes', 'figure'),
-    [Input('turma-dropdown', 'value'), Input('componente-dropdown', 'value')]
+    [Input('escola-dropdown', 'value'), Input('serie-dropdown', 'value'), Input('turma-dropdown', 'value'), Input('componente-dropdown', 'value')]
 )
-def atualizar_grafico(turma, componente):
-    dff = df[(df['Nome da turma'] == turma) & (df['Componente'] == componente)]
-    taxas = calcular_taxa_acerto_por_questao(dff)
-    quest_labels = [col.replace("P. ", "Q").replace(" Resposta", "") for col in quest_cols]
-
+def atualizar_grafico(escola, serie, turma, componente):
+    if not (escola and serie and turma and componente):
+        return px.bar(title="Selecione todos os filtros para visualizar o gráfico.")
+    dff = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie) & (df['Nome da turma'] == turma) & (df['Componente'] == componente)]
+    taxas, quest_labels = calcular_taxa_acerto_por_questao(dff, serie, componente)
+    if not taxas:
+        return px.bar(title="Gabarito não encontrado ou dados insuficientes.")
     fig = px.bar(
         x=quest_labels,
         y=taxas,
@@ -122,7 +162,6 @@ def atualizar_grafico(turma, componente):
         template='plotly_white'
     )
     fig.update_traces(marker_color='#118ab2')
-
     for i, pct in enumerate(taxas):
         fig.add_annotation(
             x=quest_labels[i],
@@ -138,7 +177,6 @@ def atualizar_grafico(turma, componente):
             xanchor="center",
             yanchor="bottom"
         )
-
     if taxas:
         media_geral = sum(taxas) / len(taxas)
         fig.add_shape(
@@ -161,7 +199,6 @@ def atualizar_grafico(turma, componente):
             xanchor="left",
             yanchor="bottom"
         )
-
     fig.update_layout(yaxis_range=[0, 100])
     return fig
 
