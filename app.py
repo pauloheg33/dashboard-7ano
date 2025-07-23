@@ -4,10 +4,29 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-# Caminho base dos arquivos
+# Lista completa de escolas (adicione novas conforme necessário)
+ESCOLAS = [
+    "E.E.F 03 DE DEZEMBRO",
+    "E.E.F ANTONIO DE SOUSA BARROS",
+    "E.E.F 21 DE DEZEMBRO",
+    "E.E.F FIRMINO JOSÉ",
+    "E.E.F SÃO JOSÉ",
+    "E.E.F SÃO FRANCISCO",
+    "E.E.F SÃO MIGUEL",
+    "E.E.F SANTA MARIA",
+    "E.E.F NOSSA SENHORA APARECIDA",
+    "E.E.F SÃO JOÃO",
+    "E.E.F SÃO PEDRO",
+    "E.E.F SÃO PAULO",
+    "E.E.F SÃO LUIZ",
+    # ...adicione outras escolas presentes nos arquivos results_* aqui...
+]
+
+# Lista de séries do 1º ao 9º ano
+SERIES = [f"{i}º ANO" for i in range(1, 10)]
+
 BASE_PATH = os.path.dirname(__file__)
 
-# Função para carregar todos os arquivos CSV, inclusive das novas pastas results_*
 def carregar_todos_dados():
     dfs = []
     # Arquivos antigos (7º ano)
@@ -29,15 +48,14 @@ def carregar_todos_dados():
             dfs.append(df)
     # Novos arquivos das pastas results_*
     for arquivo in glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv")):
-        # Inferir escola, série e componente do nome do arquivo ou do caminho
         nome = os.path.basename(arquivo)
         partes = nome.replace(".csv", "").split("_")
-        # Exemplo de nome: results_1ano_portugues_EEF_SAO_JOSE.csv
-        # Ajuste conforme o padrão real dos arquivos
         try:
             serie = partes[1].replace("ano", "º ANO")
             componente = "Português" if "portugues" in partes[2].lower() else "Matemática"
-            escola = " ".join(partes[3:]).replace("-", " ").upper()
+            escola_nome = " ".join(partes[3:]).replace("-", " ").upper()
+            # Normaliza nome da escola para o padrão da lista ESCOLAS
+            escola = next((e for e in ESCOLAS if e.replace(" ", "").upper() in escola_nome.replace(" ", "")), escola_nome.title())
         except Exception:
             serie = "Desconhecido"
             componente = "Desconhecido"
@@ -94,14 +112,19 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
             html.Label("Escola:", style={'fontWeight': 'bold'}),
             dcc.Dropdown(
                 id='escola-dropdown',
-                options=[{'label': esc, 'value': esc} for esc in sorted(df['Escola'].dropna().unique())],
+                options=[{'label': esc, 'value': esc} for esc in sorted(set(ESCOLAS + list(df['Escola'].dropna().unique())))],
                 placeholder="Selecione a escola...",
                 style={'width': '100%'}
             )
         ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
         html.Div([
             html.Label("Ano/Série:", style={'fontWeight': 'bold'}),
-            dcc.Dropdown(id='serie-dropdown', placeholder="Selecione o ano/série...", style={'width': '100%'})
+            dcc.Dropdown(
+                id='serie-dropdown',
+                options=[{'label': s, 'value': s} for s in SERIES],
+                placeholder="Selecione o ano/série...",
+                style={'width': '100%'}
+            )
         ], style={'width': '24%', 'display': 'inline-block', 'paddingRight': '10px'}),
         html.Div([
             html.Label("Turma:", style={'fontWeight': 'bold'}),
@@ -130,8 +153,10 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
 def atualizar_series(escola):
     if escola:
         series = df[df['Escola'] == escola]['Ano/Série'].unique()
-        return [{'label': s, 'value': s} for s in sorted(series)]
-    return []
+        # Garante que só aparecem séries do 1º ao 9º ano
+        series = [s for s in series if s in SERIES]
+        return [{'label': s, 'value': s} for s in sorted(series, key=lambda x: SERIES.index(x))]
+    return [{'label': s, 'value': s} for s in SERIES]
 
 @app.callback(
     Output('turma-dropdown', 'options'),
