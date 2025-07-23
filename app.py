@@ -8,7 +8,6 @@ BASE_PATH = os.path.dirname(__file__)
 
 def carregar_todos_dados():
     dfs = []
-    escolas_encontradas = set()
     # Arquivos antigos (7º ano)
     arquivos_7ano = [
         ("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
@@ -22,45 +21,45 @@ def carregar_todos_dados():
         caminho = os.path.join(BASE_PATH, nome_arquivo)
         if os.path.exists(caminho):
             df = pd.read_csv(caminho)
-            df["Escola"] = escola
-            df["Ano/Série"] = serie
-            df["Componente"] = componente
-            escolas_encontradas.add(escola)
+            df["Escola"] = escola.strip().upper()
+            df["Ano/Série"] = serie.strip().upper()
+            df["Componente"] = componente.strip().capitalize()
             dfs.append(df)
     # Novos arquivos das pastas results_*
     for arquivo in glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv")):
         df = pd.read_csv(arquivo)
-        # Tenta identificar o nome correto da escola
+        nome = os.path.basename(arquivo)
+        partes = nome.replace(".csv", "").split("_")
+        # Escola
         if "Escola" in df.columns:
-            escola = df["Escola"].iloc[0].strip().upper()
+            escola = str(df["Escola"].iloc[0]).strip().upper()
         else:
-            # Tenta extrair do nome do arquivo
-            nome = os.path.basename(arquivo)
-            partes = nome.replace(".csv", "").split("_")
             escola = " ".join(partes[3:]).replace("-", " ").upper() if len(partes) > 3 else "DESCONHECIDO"
         df["Escola"] = escola
-        escolas_encontradas.add(escola)
         # Série
         if "Ano/Série" in df.columns:
-            serie = df["Ano/Série"].iloc[0]
+            serie = str(df["Ano/Série"].iloc[0]).strip().upper()
         else:
-            partes = nome.replace(".csv", "").split("_")
-            serie = partes[1].replace("ano", "º ANO") if len(partes) > 1 else "Desconhecido"
+            serie = partes[1].replace("ano", "º ANO").strip().upper() if len(partes) > 1 else "DESCONHECIDO"
         df["Ano/Série"] = serie
         # Componente
         if "Componente" in df.columns:
-            componente = df["Componente"].iloc[0]
+            componente = str(df["Componente"].iloc[0]).strip().capitalize()
         else:
             componente = "Português" if "portugues" in nome.lower() else "Matemática"
         df["Componente"] = componente
         dfs.append(df)
     if dfs:
         df_final = pd.concat(dfs, ignore_index=True)
-        escolas_registradas = sorted({e.strip().upper() for e in df_final['Escola'].dropna().unique()})
-        return df_final, escolas_registradas
-    return pd.DataFrame(), []
+        # Normaliza nomes de escolas
+        df_final["Escola"] = df_final["Escola"].str.strip().str.upper()
+        df_final["Ano/Série"] = df_final["Ano/Série"].str.strip().str.upper()
+        df_final["Componente"] = df_final["Componente"].str.strip().str.capitalize()
+        return df_final
+    return pd.DataFrame()
 
-df, ESCOLAS = carregar_todos_dados()
+df = carregar_todos_dados()
+ESCOLAS = sorted(df['Escola'].dropna().unique())
 SERIES = [f"{i}º ANO" for i in range(1, 10)]
 
 # Gabaritos por série e componente
@@ -145,7 +144,6 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
 def atualizar_series(escola):
     if escola:
         series = df[df['Escola'] == escola]['Ano/Série'].unique()
-        # Garante que só aparecem séries do 1º ao 9º ano
         series = [s for s in series if s in SERIES]
         return [{'label': s, 'value': s} for s in sorted(series, key=lambda x: SERIES.index(x))]
     return [{'label': s, 'value': s} for s in SERIES]

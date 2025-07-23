@@ -6,28 +6,25 @@ from dash import Dash, dcc, html, Input, Output
 
 BASE_PATH = os.path.dirname(__file__)
 
-# Carregar todos os arquivos CSV das turmas (7º ano + results_*)
-arquivos_7ano = [
-    "7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv",
-    "7º_ANO_-_ANTONIO_DE_SOUSA_BARROS_2025_2026_76019.csv",
-    "7º_ANO_A_-_21_DE_DEZEMBRO_2025_2026_71725.csv",
-    "7º_ANO_A_-_FIRMINO_JOSE_2025_2026_76239.csv",
-    "7º_ANO_B_-_21_DE_DEZEMBRO_2025_2026_71726.csv",
-    "7º_ANO_C_-_21_DE_DEZEMBRO_2025_2026_71728.csv"
-]
+arquivos = glob.glob(os.path.join(BASE_PATH, "*.csv")) + glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv"))
 dfs = []
-for nome_arquivo in arquivos_7ano:
-    caminho = os.path.join(BASE_PATH, nome_arquivo)
-    if os.path.exists(caminho):
-        dfs.append(pd.read_csv(caminho))
+for f in arquivos:
+    try:
+        dfs.append(pd.read_csv(f))
+    except Exception:
+        pass
 
-# Novos arquivos das pastas results_*
-for arquivo in glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv")):
-    dfs.append(pd.read_csv(arquivo))
+if dfs:
+    df = pd.concat(dfs, ignore_index=True)
+    df["Escola"] = df["Escola"].str.strip().str.upper()
+    df["Ano/Série"] = df["Ano/Série"].str.strip().str.upper()
+    df["Componente"] = df["Componente"].str.strip().str.capitalize()
+else:
+    df = pd.DataFrame(columns=["Escola", "Ano/Série", "Componente", "Nome da turma"])
 
-df = pd.concat(dfs, ignore_index=True)
+ESCOLAS = sorted(df['Escola'].dropna().unique())
+SERIES = [f"{i}º ANO" for i in range(1, 10)]
 
-# Gabaritos por série e componente
 gabaritos = {}
 for serie in df['Ano/Série'].unique():
     for componente in df['Componente'].unique():
@@ -61,15 +58,25 @@ def calcular_taxa_acerto_por_questao(df_turma, serie, componente):
 app = Dash(__name__)
 app.title = "Acertos por Questão - Ensino Fundamental"
 
-# Layout
 app.layout = html.Div(style={'fontFamily': 'Arial', 'padding': '30px'}, children=[
     html.H1("📊 Taxa de Acerto por Questão", style={'textAlign': 'center'}),
+    html.Div([
+        html.Label("Selecione a escola:", style={'fontSize': '16px'}),
+        dcc.Dropdown(
+            id='escola-dropdown',
+            options=[{'label': esc.title(), 'value': esc} for esc in ESCOLAS],
+            value=ESCOLAS[0] if ESCOLAS else None,
+            clearable=False,
+            style={'width': '100%'}
+        ),
+    ], style={'width': '40%', 'margin': '0 auto'}),
+    html.Br(),
     html.Div([
         html.Label("Selecione a série:", style={'fontSize': '16px'}),
         dcc.Dropdown(
             id='serie-dropdown',
-            options=[{'label': s, 'value': s} for s in sorted(df['Ano/Série'].dropna().unique())],
-            value=sorted(df['Ano/Série'].dropna().unique())[0],
+            options=[{'label': s, 'value': s} for s in SERIES],
+            value=SERIES[0],
             clearable=False,
             style={'width': '100%'}
         ),
@@ -80,7 +87,7 @@ app.layout = html.Div(style={'fontFamily': 'Arial', 'padding': '30px'}, children
         dcc.Dropdown(
             id='componente-dropdown',
             options=[{'label': c, 'value': c} for c in sorted(df['Componente'].dropna().unique())],
-            value=sorted(df['Componente'].dropna().unique())[0],
+            value=sorted(df['Componente'].dropna().unique())[0] if not df.empty else None,
             clearable=False,
             style={'width': '100%'}
         ),
@@ -101,32 +108,44 @@ app.layout = html.Div(style={'fontFamily': 'Arial', 'padding': '30px'}, children
 ])
 
 @app.callback(
-    Output('turma-dropdown', 'options'),
-    [Input('serie-dropdown', 'value'), Input('componente-dropdown', 'value')]
+    Output('serie-dropdown', 'options'),
+    Input('escola-dropdown', 'value')
 )
-def atualizar_turmas(serie, componente):
-    if serie and componente:
-        turmas = df[(df['Ano/Série'] == serie) & (df['Componente'] == componente)]['Nome da turma'].dropna().unique()
+def atualizar_series(escola):
+    if escola:
+        series = df[df['Escola'] == escola]['Ano/Série'].unique()
+        series = [s for s in series if s in SERIES]
+        return [{'label': s, 'value': s} for s in sorted(series, key=lambda x: SERIES.index(x))]
+    return [{'label': s, 'value': s} for s in SERIES]
+
+@app.callback(
+    Output('componente-dropdown', 'options'),
+    [Input('escola-dropdown', 'value'), Input('serie-dropdown', 'value')]
+)
+def atualizar_componentes(escola, serie):
+    if escola and serie:
+        comps = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie)]['Componente'].dropna().unique()
+        return [{'label': c, 'value': c} for c in sorted(comps)]
+    return []
+
+@app.callback(
+    Output('turma-dropdown', 'options'),
+    [Input('escola-dropdown', 'value'), Input('serie-dropdown', 'value'), Input('componente-dropdown', 'value')]
+)
+def atualizar_turmas(escola, serie, componente):
+    if escola and serie and componente:
+        turmas = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie) & (df['Componente'] == componente)]['Nome da turma'].dropna().unique()
         return [{'label': t, 'value': t} for t in sorted(turmas)]
     return []
 
 @app.callback(
-    Output('turma-dropdown', 'value'),
-    [Input('turma-dropdown', 'options')]
-)
-def selecionar_primeira_turma(options):
-    if options:
-        return options[0]['value']
-    return None
-
-@app.callback(
     Output('grafico-questoes', 'figure'),
-    [Input('serie-dropdown', 'value'), Input('componente-dropdown', 'value'), Input('turma-dropdown', 'value')]
+    [Input('escola-dropdown', 'value'), Input('serie-dropdown', 'value'), Input('componente-dropdown', 'value'), Input('turma-dropdown', 'value')]
 )
-def atualizar_grafico(serie, componente, turma):
-    if not (serie and componente and turma):
+def atualizar_grafico(escola, serie, componente, turma):
+    if not (escola and serie and componente and turma):
         return px.bar(title="Selecione todos os filtros para visualizar o gráfico.")
-    df_turma = df[(df['Ano/Série'] == serie) & (df['Componente'] == componente) & (df['Nome da turma'] == turma)]
+    df_turma = df[(df['Escola'] == escola) & (df['Ano/Série'] == serie) & (df['Componente'] == componente) & (df['Nome da turma'] == turma)]
     taxas, quest_labels = calcular_taxa_acerto_por_questao(df_turma, serie, componente)
     if not taxas:
         return px.bar(title="Gabarito não encontrado ou dados insuficientes.")
