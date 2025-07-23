@@ -4,31 +4,11 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, dcc, html, Input, Output
 
-# Lista completa de escolas (adicione novas conforme necessário)
-ESCOLAS = [
-    "E.E.F 03 DE DEZEMBRO",
-    "E.E.F ANTONIO DE SOUSA BARROS",
-    "E.E.F 21 DE DEZEMBRO",
-    "E.E.F FIRMINO JOSÉ",
-    "E.E.F SÃO JOSÉ",
-    "E.E.F SÃO FRANCISCO",
-    "E.E.F SÃO MIGUEL",
-    "E.E.F SANTA MARIA",
-    "E.E.F NOSSA SENHORA APARECIDA",
-    "E.E.F SÃO JOÃO",
-    "E.E.F SÃO PEDRO",
-    "E.E.F SÃO PAULO",
-    "E.E.F SÃO LUIZ",
-    # ...adicione outras escolas presentes nos arquivos results_* aqui...
-]
-
-# Lista de séries do 1º ao 9º ano
-SERIES = [f"{i}º ANO" for i in range(1, 10)]
-
 BASE_PATH = os.path.dirname(__file__)
 
 def carregar_todos_dados():
     dfs = []
+    escolas_encontradas = set()
     # Arquivos antigos (7º ano)
     arquivos_7ano = [
         ("7_ANO_-_03_DE_DEZEMBRO_2025_2026_75993.csv", "E.E.F 03 DE DEZEMBRO", "7º ANO", "Matemática"),
@@ -45,31 +25,43 @@ def carregar_todos_dados():
             df["Escola"] = escola
             df["Ano/Série"] = serie
             df["Componente"] = componente
+            escolas_encontradas.add(escola)
             dfs.append(df)
     # Novos arquivos das pastas results_*
     for arquivo in glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv")):
-        nome = os.path.basename(arquivo)
-        partes = nome.replace(".csv", "").split("_")
-        try:
-            serie = partes[1].replace("ano", "º ANO")
-            componente = "Português" if "portugues" in partes[2].lower() else "Matemática"
-            escola_nome = " ".join(partes[3:]).replace("-", " ").upper()
-            # Normaliza nome da escola para o padrão da lista ESCOLAS
-            escola = next((e for e in ESCOLAS if e.replace(" ", "").upper() in escola_nome.replace(" ", "")), escola_nome.title())
-        except Exception:
-            serie = "Desconhecido"
-            componente = "Desconhecido"
-            escola = "Desconhecido"
         df = pd.read_csv(arquivo)
+        # Tenta identificar o nome correto da escola
+        if "Escola" in df.columns:
+            escola = df["Escola"].iloc[0].strip().upper()
+        else:
+            # Tenta extrair do nome do arquivo
+            nome = os.path.basename(arquivo)
+            partes = nome.replace(".csv", "").split("_")
+            escola = " ".join(partes[3:]).replace("-", " ").upper() if len(partes) > 3 else "DESCONHECIDO"
         df["Escola"] = escola
+        escolas_encontradas.add(escola)
+        # Série
+        if "Ano/Série" in df.columns:
+            serie = df["Ano/Série"].iloc[0]
+        else:
+            partes = nome.replace(".csv", "").split("_")
+            serie = partes[1].replace("ano", "º ANO") if len(partes) > 1 else "Desconhecido"
         df["Ano/Série"] = serie
+        # Componente
+        if "Componente" in df.columns:
+            componente = df["Componente"].iloc[0]
+        else:
+            componente = "Português" if "portugues" in nome.lower() else "Matemática"
         df["Componente"] = componente
         dfs.append(df)
     if dfs:
-        return pd.concat(dfs, ignore_index=True)
-    return pd.DataFrame()
+        df_final = pd.concat(dfs, ignore_index=True)
+        escolas_registradas = sorted({e.strip().upper() for e in df_final['Escola'].dropna().unique()})
+        return df_final, escolas_registradas
+    return pd.DataFrame(), []
 
-df = carregar_todos_dados()
+df, ESCOLAS = carregar_todos_dados()
+SERIES = [f"{i}º ANO" for i in range(1, 10)]
 
 # Gabaritos por série e componente
 gabaritos = {}
@@ -112,7 +104,7 @@ app.layout = html.Div(style={'fontFamily': 'Segoe UI', 'padding': '30px', 'backg
             html.Label("Escola:", style={'fontWeight': 'bold'}),
             dcc.Dropdown(
                 id='escola-dropdown',
-                options=[{'label': esc, 'value': esc} for esc in sorted(set(ESCOLAS + list(df['Escola'].dropna().unique())))],
+                options=[{'label': esc.title(), 'value': esc} for esc in ESCOLAS],
                 placeholder="Selecione a escola...",
                 style={'width': '100%'}
             )
