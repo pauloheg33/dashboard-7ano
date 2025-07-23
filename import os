@@ -1,0 +1,78 @@
+import os
+import glob
+import pandas as pd
+
+BASE_PATH = os.path.dirname(__file__)
+arquivos = glob.glob(os.path.join(BASE_PATH, "*.csv")) + glob.glob(os.path.join(BASE_PATH, "results_*", "*.csv"))
+
+for arquivo in arquivos:
+    df = pd.read_csv(arquivo)
+    # Identifica possíveis colunas de respostas
+    quest_cols = [col for col in df.columns if "Resposta" in col]
+    if not quest_cols:
+        continue
+
+    # Procura linha de gabarito (nome pode variar)
+    gabarito_linha = None
+    for idx, row in df.iterrows():
+        for col in df.columns:
+            val = str(row[col]).strip().upper()
+            if val in ["GABARITO", "GABARITO OFICIAL"]:
+                gabarito_linha = row
+                break
+        if gabarito_linha is not None:
+            break
+
+    if gabarito_linha is None:
+        # Tenta identificar gabarito por outras heurísticas (ex: linha com muitos valores únicos)
+        # Pule se não encontrar
+        continue
+
+    # Extrai respostas do gabarito
+    gabarito_dict = {}
+    for col in quest_cols:
+        resposta = str(gabarito_linha[col]).strip().upper()
+        if resposta and resposta not in ["GABARITO", "NAN"]:
+            num = ''.join(filter(str.isdigit, col))
+            if num:
+                gabarito_dict[int(num)] = resposta
+
+    if not gabarito_dict:
+        continue
+
+    # Identifica série e componente pelo arquivo ou colunas
+    serie = None
+    componente = None
+    if "Ano/Série" in df.columns:
+        serie = str(df["Ano/Série"].iloc[0]).strip().lower().replace("º ano", "").replace(" ", "")
+    else:
+        partes = os.path.basename(arquivo).lower().split("_")
+        for p in partes:
+            if "ano" in p:
+                serie = p.replace("ano", "")
+    if "Componente" in df.columns:
+        componente = str(df["Componente"].iloc[0]).strip().lower()
+    else:
+        if "portugues" in arquivo.lower():
+            componente = "portugues"
+        elif "matematica" in arquivo.lower():
+            componente = "matematica"
+        else:
+            componente = "desconhecido"
+
+    if not serie or not componente:
+        continue
+
+    # Cria DataFrame do gabarito
+    gab_df = pd.DataFrame({
+        "Questão": list(gabarito_dict.keys()),
+        "Gabarito": list(gabarito_dict.values())
+    }).sort_values("Questão")
+
+    # Salva arquivo
+    nome_gabarito = f"gabarito_{serie}_{componente}.csv"
+    caminho_gabarito = os.path.join(BASE_PATH, nome_gabarito)
+    gab_df.to_csv(caminho_gabarito, index=False)
+    print(f"Gabarito salvo: {nome_gabarito}")
+
+print("Processo concluído.")
